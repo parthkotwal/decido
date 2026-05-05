@@ -1,1 +1,48 @@
 CLAUDE.md
+.env
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Type checking / lint caches
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Logs and runtime artifacts
+*.log
+
+# Local databases and temporary files
+*.db
+*.sqlite
+*.sqlite3
+*.tmp
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store

@@ -1,11 +1,16 @@
 import asyncio
+import json
+import os
 from typing import Optional
 
+from google import genai
+from google.genai import types
 from playwright.async_api import Page
 
 from core.action import Action, ActionType, BBox
 
-# Accessibility roles we consider interactive and their default action type
+GEMINI_MODEL = "gemini-2.5-flash-lite"
+
 _ROLE_TO_ACTION: dict[str, ActionType] = {
     "button": ActionType.CLICK,
     "link": ActionType.CLICK,
@@ -21,34 +26,29 @@ _ROLE_TO_ACTION: dict[str, ActionType] = {
     "listbox": ActionType.SELECT,
 }
 
+_SYSTEM_PROMPT = """\
+You are a browser automation agent. Given an accessibility tree and a task, \
+propose up to 3 actions that would best complete the task.
 
-def _flatten_axtree(node: dict, results: list[dict]) -> None:
-    """Walk the axtree depth-first, collect interactive leaf-ish nodes."""
-    role = node.get("role", "")
-    name = node.get("name", "")
+Respond ONLY with a JSON array. Each element must have:
+  - node_id   (integer from the tree)
+  - action    (one of: click, type, scroll, select, hover)
+  - confidence (float 0–1)
+  - text      (string, required for "type" and "select", omit otherwise)
 
-    if role in _ROLE_TO_ACTION and name:
-        results.append(node)
+Example:
+[
+  {"node_id": 12, "action": "click", "confidence": 0.92},
+  {"node_id": 7,  "action": "type",  "confidence": 0.80, "text": "hello@example.com"}
+]
+"""
 
-    for child in node.get("children", []):
-        _flatten_axtree(child, results)
 
-
-def _task_relevance(node_name: str, task: str) -> float:
-    """Rough heuristic: fraction of task words present in the element name."""
-    task_words = set(task.lower().split())
-    name_words = set(node_name.lower().split())
-    if not task_words:
-        return 0.0
-    return len(task_words & name_words) / len(task_words)
-
+# ── axtree helpers ────────────────────────────────────────────────────────────
 
 async def _resolve_bbox(page: Page, role: str, name: str) -> Optional[BBox]:
-    """Locate an element by role+name and return its bounding box."""
     try:
-        locator = page.get_by_role(role, name=name)  # type: ignore[arg-type]
-        # Use first() in case multiple elements match — first visible is safest
-        box = await locator.first.bounding_box(timeout=2000)
+        box = await page.get_by_role(role, name=name).first.bounding_box(timeout=2000)  # type: ignore[arg-type]
         if box is None:
             return None
         return (box["x"], box["y"], box["x"] + box["width"], box["y"] + box["height"])
@@ -56,49 +56,143 @@ async def _resolve_bbox(page: Page, role: str, name: str) -> Optional[BBox]:
         return None
 
 
+async def _build_node_index(
+    page: Page, snapshot: dict
+) -> tuple[dict[int, dict], list[str]]:
+    """
+    Walk the axtree, resolve bboxes, return:
+      - index: {node_id -> {role, name, action_type, bbox, element_ref}}
+      - lines: text lines for the Gemini prompt
+    """
+    counter = [0]
+    index: dict[int, dict] = {}
+    lines: list[str] = []
+    resolve_tasks: list[tuple[int, str, str]] = []  # (node_id, role, name)
+
+    def walk(node: dict) -> None:
+        role = node.get("role", "")
+        name = node.get("name", "")
+        if role in _ROLE_TO_ACTION and name:
+            nid = counter[0]
+            counter[0] += 1
+            index[nid] = {
+                "role": role,
+                "name": name,
+                "action_type": _ROLE_TO_ACTION[role],
+                "element_ref": node.get("nodeId"),
+                "bbox": None,
+            }
+            resolve_tasks.append((nid, role, name))
+        for child in node.get("children", []):
+            walk(child)
+
+    walk(snapshot)
+
+    # Resolve all bboxes concurrently
+    async def resolve(nid: int, role: str, name: str) -> None:
+        index[nid]["bbox"] = await _resolve_bbox(page, role, name)
+
+    await asyncio.gather(*[resolve(nid, r, n) for nid, r, n in resolve_tasks])
+
+    # Build prompt lines (only nodes with a resolved bbox)
+    for nid, info in index.items():
+        if info["bbox"] is None:
+            continue
+        x1, y1, x2, y2 = (round(v) for v in info["bbox"])
+        lines.append(
+            f'[{nid}] {info["role"]} "{info["name"]}" bbox=({x1},{y1},{x2},{y2})'
+        )
+
+    return index, lines
+
+
+# ── Gemini call ───────────────────────────────────────────────────────────────
+
+def _build_prompt(task: str, axtree_lines: list[str]) -> str:
+    tree_text = "\n".join(axtree_lines) if axtree_lines else "(no interactive elements found)"
+    return f"Task: {task}\n\nAccessibility tree:\n{tree_text}"
+
+
+def _parse_gemini_response(text: str) -> list[dict]:
+    """Extract the JSON array from Gemini's response, tolerating markdown fences."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, list) else []
+    except json.JSONDecodeError:
+        return []
+
+
+# ── public API ────────────────────────────────────────────────────────────────
+
 async def propose_actions(
     page: Page,
     task: str,
     max_candidates: int = 3,
+    api_key: Optional[str] = None,
 ) -> list[Action]:
     """
-    Snapshot the axtree, resolve bboxes, and return ranked candidate Actions.
+    Use Gemini 2.5 Flash Lite to propose candidate Actions from the page axtree.
 
-    Candidates are sorted by confidence descending. Elements whose bbox cannot
-    be resolved (hidden, off-screen, stale) are silently dropped.
+    Returns up to max_candidates Actions sorted by confidence descending.
+    Returns an empty list (rather than raising) on any API or parse failure.
     """
     snapshot = await page.accessibility.snapshot()
     if snapshot is None:
         return []
 
-    interactive_nodes: list[dict] = []
-    _flatten_axtree(snapshot, interactive_nodes)
+    index, axtree_lines = await _build_node_index(page, snapshot)
+    if not axtree_lines:
+        return []
 
-    # Resolve bboxes concurrently — one coroutine per candidate
-    async def build_action(node: dict) -> Optional[Action]:
-        role = node["role"]
-        name = node.get("name", "")
-        action_type = _ROLE_TO_ACTION[role]
+    client = genai.Client(api_key=api_key or os.environ["GEMINI_API_KEY"])
+    prompt = _build_prompt(task, axtree_lines)
 
-        bbox = await _resolve_bbox(page, role, name)
-        if bbox is None:
-            return None
-
-        relevance = _task_relevance(name, task)
-        focused_bonus = 0.2 if node.get("focused") else 0.0
-        confidence = min(1.0, 0.4 + 0.4 * relevance + focused_bonus)
-
-        return Action(
-            action_type=action_type,
-            bbox=bbox,
-            source="dom",
-            confidence=confidence,
-            element_ref=node.get("nodeId"),
-            metadata={"role": role, "name": name},
+    try:
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=_SYSTEM_PROMPT,
+                temperature=0.0,
+            ),
         )
+        raw = response.text or ""
+    except Exception:
+        return []
 
-    results = await asyncio.gather(*[build_action(n) for n in interactive_nodes])
+    proposals = _parse_gemini_response(raw)
 
-    candidates = [a for a in results if a is not None]
-    candidates.sort(key=lambda a: a.confidence, reverse=True)
-    return candidates[:max_candidates]
+    actions: list[Action] = []
+    for p in proposals:
+        try:
+            nid = int(p["node_id"])
+            node = index.get(nid)
+            if node is None or node["bbox"] is None:
+                continue
+
+            action_type = ActionType(p["action"])
+            confidence = float(p.get("confidence", 0.5))
+            text = p.get("text")
+
+            actions.append(
+                Action(
+                    action_type=action_type,
+                    bbox=node["bbox"],
+                    source="dom",
+                    confidence=min(1.0, max(0.0, confidence)),
+                    text=text,
+                    element_ref=node["element_ref"],
+                    metadata={"role": node["role"], "name": node["name"]},
+                )
+            )
+        except (KeyError, ValueError):
+            continue
+
+    actions.sort(key=lambda a: a.confidence, reverse=True)
+    return actions[:max_candidates]
