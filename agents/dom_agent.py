@@ -1,15 +1,12 @@
-import asyncio
 import json
 import os
-from typing import Optional
 
-from google import genai
-from google.genai import types
+from openai import AsyncOpenAI
 from playwright.async_api import Page
 
 from core.action import Action, ActionType, BBox
 
-GEMINI_MODEL = "gemini-2.5-flash-lite"
+MODEL = "gpt-5-nano"
 
 _ROLE_TO_ACTION: dict[str, ActionType] = {
     "button": ActionType.CLICK,
@@ -44,77 +41,118 @@ Example:
 """
 
 
-# ── axtree helpers ────────────────────────────────────────────────────────────
+# ── DOM extraction ────────────────────────────────────────────────────────────
 
-async def _resolve_bbox(page: Page, role: str, name: str) -> Optional[BBox]:
-    try:
-        box = await page.get_by_role(role, name=name).first.bounding_box(timeout=2000)  # type: ignore[arg-type]
-        if box is None:
-            return None
-        return (box["x"], box["y"], box["x"] + box["width"], box["y"] + box["height"])
-    except Exception:
-        return None
+_EXTRACT_JS = """
+() => {
+    const SELECTORS = [
+        'button', 'a[href]', 'input', 'select', 'textarea',
+        '[role="button"]', '[role="link"]', '[role="checkbox"]',
+        '[role="radio"]', '[role="textbox"]', '[role="combobox"]',
+        '[role="menuitem"]', '[role="tab"]', '[role="option"]',
+        '[role="searchbox"]', '[role="spinbutton"]', '[role="listbox"]',
+    ].join(',');
+
+    const TAG_TO_ROLE = {
+        button: 'button', a: 'link', select: 'listbox',
+        textarea: 'textbox',
+    };
+    const INPUT_TYPE_TO_ROLE = {
+        checkbox: 'checkbox', radio: 'radio', text: 'textbox',
+        email: 'textbox', password: 'textbox', search: 'searchbox',
+        number: 'spinbutton',
+    };
+
+    function resolveLabel(el) {
+        if (el.getAttribute('aria-label')) return el.getAttribute('aria-label').trim();
+
+        const labelledBy = el.getAttribute('aria-labelledby');
+        if (labelledBy) {
+            const ref = document.getElementById(labelledBy);
+            if (ref) return ref.textContent.trim();
+        }
+
+        if (el.id) {
+            const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+            if (label) return label.textContent.trim().slice(0, 80);
+        }
+
+        const parentLabel = el.closest('label');
+        if (parentLabel) return parentLabel.textContent.trim().slice(0, 80);
+
+        return (
+            el.getAttribute('placeholder')
+            || el.getAttribute('title')
+            || el.innerText?.trim().slice(0, 80)
+            || el.getAttribute('value')
+            || ''
+        ).trim();
+    }
+
+    return Array.from(document.querySelectorAll(SELECTORS))
+        .map((el, i) => {
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return null;
+            if (rect.bottom < 0 || rect.top > window.innerHeight) return null;
+
+            const tag = el.tagName.toLowerCase();
+            const explicitRole = el.getAttribute('role');
+            let role = explicitRole
+                || (tag === 'input' ? INPUT_TYPE_TO_ROLE[el.type] || 'textbox' : null)
+                || TAG_TO_ROLE[tag]
+                || tag;
+
+            return {
+                index: i,
+                role,
+                name: resolveLabel(el),
+                bbox: [rect.left, rect.top, rect.right, rect.bottom],
+                focused: document.activeElement === el,
+            };
+        })
+        .filter(Boolean);
+}
+"""
 
 
-async def _build_node_index(
-    page: Page, snapshot: dict
-) -> tuple[dict[int, dict], list[str]]:
-    """
-    Walk the axtree, resolve bboxes, return:
-      - index: {node_id -> {role, name, action_type, bbox, element_ref}}
-      - lines: text lines for the Gemini prompt
-    """
-    counter = [0]
+async def _build_node_index(page: Page) -> tuple[dict[int, dict], list[str]]:
+    elements: list[dict] = await page.evaluate(_EXTRACT_JS)
+
     index: dict[int, dict] = {}
     lines: list[str] = []
-    resolve_tasks: list[tuple[int, str, str]] = []  # (node_id, role, name)
 
-    def walk(node: dict) -> None:
-        role = node.get("role", "")
-        name = node.get("name", "")
-        if role in _ROLE_TO_ACTION and name:
-            nid = counter[0]
-            counter[0] += 1
-            index[nid] = {
-                "role": role,
-                "name": name,
-                "action_type": _ROLE_TO_ACTION[role],
-                "element_ref": node.get("nodeId"),
-                "bbox": None,
-            }
-            resolve_tasks.append((nid, role, name))
-        for child in node.get("children", []):
-            walk(child)
-
-    walk(snapshot)
-
-    # Resolve all bboxes concurrently
-    async def resolve(nid: int, role: str, name: str) -> None:
-        index[nid]["bbox"] = await _resolve_bbox(page, role, name)
-
-    await asyncio.gather(*[resolve(nid, r, n) for nid, r, n in resolve_tasks])
-
-    # Build prompt lines (only nodes with a resolved bbox)
-    for nid, info in index.items():
-        if info["bbox"] is None:
+    for nid, el in enumerate(elements):
+        role = el["role"]
+        action_type = _ROLE_TO_ACTION.get(role)
+        if action_type is None:
             continue
-        x1, y1, x2, y2 = (round(v) for v in info["bbox"])
+
+        x1, y1, x2, y2 = el["bbox"]
+        bbox: BBox = (x1, y1, x2, y2)
+        name = el["name"] or role
+
+        index[nid] = {
+            "role": role,
+            "name": name,
+            "action_type": action_type,
+            "bbox": bbox,
+            "focused": el["focused"],
+        }
         lines.append(
-            f'[{nid}] {info["role"]} "{info["name"]}" bbox=({x1},{y1},{x2},{y2})'
+            f'[{nid}] {role} "{name}" bbox=({round(x1)},{round(y1)},{round(x2)},{round(y2)})'
         )
 
     return index, lines
 
 
-# ── Gemini call ───────────────────────────────────────────────────────────────
+# ── LM call ───────────────────────────────────────────────────────────────────
 
 def _build_prompt(task: str, axtree_lines: list[str]) -> str:
     tree_text = "\n".join(axtree_lines) if axtree_lines else "(no interactive elements found)"
     return f"Task: {task}\n\nAccessibility tree:\n{tree_text}"
 
 
-def _parse_gemini_response(text: str) -> list[dict]:
-    """Extract the JSON array from Gemini's response, tolerating markdown fences."""
+def _parse_response(text: str) -> list[dict]:
     text = text.strip()
     if text.startswith("```"):
         text = text.split("```")[1]
@@ -133,40 +171,34 @@ async def propose_actions(
     page: Page,
     task: str,
     max_candidates: int = 3,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> list[Action]:
     """
-    Use Gemini 2.5 Flash Lite to propose candidate Actions from the page axtree.
+    Use an LM to propose candidate Actions from the page DOM.
 
     Returns up to max_candidates Actions sorted by confidence descending.
     Returns an empty list (rather than raising) on any API or parse failure.
     """
-    snapshot = await page.accessibility.snapshot()
-    if snapshot is None:
-        return []
-
-    index, axtree_lines = await _build_node_index(page, snapshot)
+    index, axtree_lines = await _build_node_index(page)
     if not axtree_lines:
         return []
 
-    client = genai.Client(api_key=api_key or os.environ["GEMINI_API_KEY"])
+    client = AsyncOpenAI(api_key=api_key or os.environ["OPENAI_API_KEY"])
     prompt = _build_prompt(task, axtree_lines)
 
     try:
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=_SYSTEM_PROMPT,
-                temperature=0.0,
-            ),
+        response = await client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
         )
-        raw = response.text or ""
+        raw = response.choices[0].message.content or ""
     except Exception:
         return []
 
-    proposals = _parse_gemini_response(raw)
+    proposals = _parse_response(raw)
 
     actions: list[Action] = []
     for p in proposals:
@@ -176,18 +208,14 @@ async def propose_actions(
             if node is None or node["bbox"] is None:
                 continue
 
-            action_type = ActionType(p["action"])
-            confidence = float(p.get("confidence", 0.5))
-            text = p.get("text")
-
             actions.append(
                 Action(
-                    action_type=action_type,
+                    action_type=ActionType(p["action"]),
                     bbox=node["bbox"],
                     source="dom",
-                    confidence=min(1.0, max(0.0, confidence)),
-                    text=text,
-                    element_ref=node["element_ref"],
+                    confidence=min(1.0, max(0.0, float(p.get("confidence", 0.5)))),
+                    text=p.get("text"),
+                    element_ref=node.get("element_ref"),
                     metadata={"role": node["role"], "name": node["name"]},
                 )
             )

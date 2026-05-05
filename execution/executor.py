@@ -41,7 +41,7 @@ class ExecutionResult:
     score: float
     agreement: float
     success: bool
-    signal: Optional[str] = None   # "url_change" | "dom_mutation" | None
+    signal: Optional[str] = None   # "url_change" | "dom_mutation" | "input_value" | None
     url_before: str = ""
     url_after: str = ""
     mutation_count: int = 0
@@ -85,6 +85,11 @@ async def execute(page: Page, scored: ScoredAction) -> ExecutionResult:
         elif mutation_count >= MUTATION_THRESHOLD:
             result.success = True
             result.signal = "dom_mutation"
+        elif action.action_type in (ActionType.TYPE, ActionType.SELECT):
+            typed = action.text or ""
+            if typed and await _input_has_value(page, action.center(), typed):
+                result.success = True
+                result.signal = "input_value"
 
     except Exception as e:
         result.error = str(e)
@@ -124,6 +129,22 @@ async def _dispatch(page: Page, action: Action) -> None:
                 return
         # fallback: click the center and hope it's a custom dropdown
         await page.mouse.click(x, y)
+
+
+async def _input_has_value(page: Page, center: tuple[float, float], expected: str) -> bool:
+    """Check whether the input/textarea at (x, y) now contains the expected text."""
+    x, y = center
+    try:
+        value: str = await page.evaluate(
+            """([x, y]) => {
+                const el = document.elementFromPoint(x, y);
+                return el ? (el.value ?? el.textContent ?? '') : '';
+            }""",
+            [x, y],
+        )
+        return expected in value
+    except Exception:
+        return False
 
 
 def _point_in_box(x: float, y: float, box: dict) -> bool:
