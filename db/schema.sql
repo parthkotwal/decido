@@ -2,12 +2,16 @@ CREATE TABLE IF NOT EXISTS episodes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     task        TEXT    NOT NULL,
     page_url    TEXT    NOT NULL,
+    metadata    TEXT    NOT NULL DEFAULT '{}',
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS action_logs (
+CREATE TABLE IF NOT EXISTS candidates (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     episode_id      INTEGER NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+
+    rank            INTEGER NOT NULL,   -- position in scored list (1 = best)
+    selected        INTEGER NOT NULL,   -- 1 if this candidate was executed, else 0
 
     source          TEXT    NOT NULL,
     action_type     TEXT    NOT NULL,
@@ -22,17 +26,18 @@ CREATE TABLE IF NOT EXISTS action_logs (
     agreement       REAL    NOT NULL,
     score           REAL    NOT NULL,
 
-    success         INTEGER NOT NULL,   -- 0 | 1 (SQLite has no boolean type)
+    -- execution outcome: only populated for the selected candidate
+    success         INTEGER,
     signal          TEXT,
     url_before      TEXT    NOT NULL,
-    url_after       TEXT    NOT NULL,
-    mutation_count  INTEGER NOT NULL DEFAULT 0,
+    url_after       TEXT,
+    mutation_count  INTEGER,
     error           TEXT,
 
     metadata        TEXT    NOT NULL DEFAULT '{}',
     created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_action_logs_source   ON action_logs(source);
-CREATE INDEX IF NOT EXISTS idx_action_logs_success  ON action_logs(success);
-CREATE INDEX IF NOT EXISTS idx_action_logs_episode  ON action_logs(episode_id);
+CREATE INDEX IF NOT EXISTS idx_candidates_episode   ON candidates(episode_id);
+CREATE INDEX IF NOT EXISTS idx_candidates_selected  ON candidates(selected);
+CREATE INDEX IF NOT EXISTS idx_candidates_source    ON candidates(source);

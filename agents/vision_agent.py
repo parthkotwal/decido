@@ -64,7 +64,11 @@ def _parse_proposal(p: dict) -> Action | None:
             return None
 
         confidence = float(p.get("confidence", 0.5))
-        text = p.get("text")
+        text = p.get("text") or None
+
+        # type/select without text is a malformed proposal — reject it
+        if raw_action in ("type", "select") and not text:
+            return None
 
         return Action(
             action_type=ActionType(raw_action),

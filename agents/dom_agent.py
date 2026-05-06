@@ -208,13 +208,17 @@ async def propose_actions(
             if node is None or node["bbox"] is None:
                 continue
 
+            text = p.get("text") or None
+            if p["action"] in ("type", "select") and not text:
+                continue
+
             actions.append(
                 Action(
                     action_type=ActionType(p["action"]),
                     bbox=node["bbox"],
                     source="dom",
                     confidence=min(1.0, max(0.0, float(p.get("confidence", 0.5)))),
-                    text=p.get("text"),
+                    text=text,
                     element_ref=node.get("element_ref"),
                     metadata={"role": node["role"], "name": node["name"]},
                 )

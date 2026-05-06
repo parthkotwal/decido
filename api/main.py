@@ -1,4 +1,5 @@
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
@@ -13,7 +14,7 @@ from agents import dom_agent, vision_agent
 from core.scorer import score_candidates
 from core.ranker import select_best
 from execution.executor import execute
-from feedback.logger import DB_PATH, init_db, log_execution
+from feedback.logger import DB_PATH, init_db, log_candidates
 
 
 # ── shared state ──────────────────────────────────────────────────────────────
@@ -76,11 +77,22 @@ async def act(req: ActRequest) -> ActResponse:
     try:
         await page.goto(req.url, wait_until="domcontentloaded", timeout=15_000)
 
-        # Run both agents in parallel
-        dom_candidates, vision_candidates = await asyncio.gather(
-            dom_agent.propose_actions(page, req.task),
-            vision_agent.propose_actions(page, req.task),
+        # Run both agents in parallel, capturing latency and failure status
+        (dom_candidates, dom_elapsed), (vision_candidates, vision_elapsed) = (
+            await asyncio.gather(
+                _timed(dom_agent.propose_actions(page, req.task)),
+                _timed(vision_agent.propose_actions(page, req.task)),
+            )
         )
+
+        episode_metadata = {
+            "dom_latency_ms":       round(dom_elapsed * 1000),
+            "vision_latency_ms":    round(vision_elapsed * 1000),
+            "dom_candidates":       len(dom_candidates),
+            "vision_candidates":    len(vision_candidates),
+            "dom_failed":           len(dom_candidates) == 0,
+            "vision_failed":        len(vision_candidates) == 0,
+        }
 
         all_candidates = dom_candidates + vision_candidates
         if not all_candidates:
@@ -93,7 +105,7 @@ async def act(req: ActRequest) -> ActResponse:
             raise HTTPException(status_code=422, detail="Ranking produced no result")
 
         result = await execute(page, best)
-        await log_execution(state.db, req.task, result)
+        await log_candidates(state.db, req.task, scored, best, result, episode_metadata)
 
         return ActResponse(
             success=result.success,
@@ -114,3 +126,10 @@ async def act(req: ActRequest) -> ActResponse:
 
     finally:
         await page.close()
+
+
+async def _timed(coro) -> tuple[list, float]:
+    """Run a coroutine and return (result, elapsed_seconds)."""
+    t0 = time.monotonic()
+    result = await coro
+    return result, time.monotonic() - t0

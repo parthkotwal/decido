@@ -90,6 +90,10 @@ async def execute(page: Page, scored: ScoredAction) -> ExecutionResult:
             if typed and await _input_has_value(page, action.center(), typed):
                 result.success = True
                 result.signal = "input_value"
+        elif action.action_type == ActionType.CLICK:
+            if await _checkbox_is_checked(page, action.center()):
+                result.success = True
+                result.signal = "checkbox_checked"
 
     except Exception as e:
         result.error = str(e)
@@ -143,6 +147,24 @@ async def _input_has_value(page: Page, center: tuple[float, float], expected: st
             [x, y],
         )
         return expected in value
+    except Exception:
+        return False
+
+
+async def _checkbox_is_checked(page: Page, center: tuple[float, float]) -> bool:
+    """Return True if the element at (x, y) is a checked checkbox or radio button."""
+    x, y = center
+    try:
+        return await page.evaluate(
+            """([x, y]) => {
+                const el = document.elementFromPoint(x, y);
+                if (!el) return false;
+                const tag = el.tagName.toLowerCase();
+                const type = (el.type || '').toLowerCase();
+                return (tag === 'input' && (type === 'checkbox' || type === 'radio') && el.checked);
+            }""",
+            [x, y],
+        )
     except Exception:
         return False
 
