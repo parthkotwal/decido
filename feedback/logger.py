@@ -2,6 +2,7 @@ import json
 import aiosqlite
 
 from core.scorer import ScoredAction
+from core.session import Session, StepRecord
 from execution.executor import ExecutionResult
 
 DB_PATH = "decido.db"
@@ -84,3 +85,72 @@ async def log_candidates(
 
     await db.commit()
     return episode_id
+
+
+async def create_session(db: aiosqlite.Connection, task: str, start_url: str) -> int:
+    """
+    Insert a new session row and return its id.
+    Status starts as 'running'; call close_session() when it ends.
+    """
+    async with db.execute(
+        "INSERT INTO sessions (task, start_url) VALUES (?, ?) RETURNING id",
+        (task, start_url),
+    ) as cursor:
+        row = await cursor.fetchone()
+        session_id = row[0]
+    await db.commit()
+    return session_id
+
+
+async def log_step(
+    db: aiosqlite.Connection,
+    session_id: int,
+    step: StepRecord,
+    checkpoint: bool = False,
+) -> None:
+    """
+    Persist one completed step to the `steps` table and increment
+    the session's step_count.
+    """
+    await db.execute(
+        """
+        INSERT INTO steps (
+            session_id, episode_id, step_index,
+            page_url, axtree_hash, checkpoint
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            session_id,
+            step.episode_id,
+            step.step_index,
+            step.page_url,
+            step.axtree_hash,
+            int(checkpoint),
+        ),
+    )
+    await db.execute(
+        "UPDATE sessions SET step_count = step_count + 1 WHERE id = ?",
+        (session_id,),
+    )
+    await db.commit()
+
+
+async def close_session(
+    db: aiosqlite.Connection,
+    session_id: int,
+    termination_reason: str,
+) -> None:
+    """
+    Mark a session as ended with its termination reason and status.
+    status = 'complete' for success, 'failed' for everything else.
+    """
+    status = "complete" if termination_reason == "success" else "failed"
+    await db.execute(
+        """
+        UPDATE sessions
+        SET status = ?, termination_reason = ?, ended_at = datetime('now')
+        WHERE id = ?
+        """,
+        (status, termination_reason, session_id),
+    )
+    await db.commit()
