@@ -135,6 +135,24 @@ async def log_step(
     await db.commit()
 
 
+async def log_rollback(
+    db: aiosqlite.Connection,
+    session_id: int,
+    triggered_at_step: int,
+    rolled_back_to_step: int,
+    reason: str,
+) -> None:
+    """Persist a rollback event to the rollbacks table."""
+    await db.execute(
+        """
+        INSERT INTO rollbacks (session_id, triggered_at_step, rolled_back_to_step, reason)
+        VALUES (?, ?, ?, ?)
+        """,
+        (session_id, triggered_at_step, rolled_back_to_step, reason),
+    )
+    await db.commit()
+
+
 async def close_session(
     db: aiosqlite.Connection,
     session_id: int,

@@ -12,6 +12,7 @@ async def propose_actions(
     page: Page,
     task: str,
     max_candidates: int = 3,
+    memory_context: str | None = None,
 ) -> list[Action]:
     """
     Take a screenshot of the current page, send it to Qwen2.5-VL on Modal,
@@ -27,7 +28,7 @@ async def propose_actions(
 
     try:
         proposals: list[dict] = await _VisionModel().propose.remote.aio(
-            screenshot_bytes, task
+            screenshot_bytes, task, memory_context
         )
     except Exception:
         return []

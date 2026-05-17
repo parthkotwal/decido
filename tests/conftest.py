@@ -8,3 +8,6 @@ from unittest.mock import MagicMock
 
 # modal is only available inside Modal containers — stub it for local tests
 sys.modules.setdefault("modal", MagicMock())
+
+# aiosqlite is installed in the project venv, not system Python
+sys.modules.setdefault("aiosqlite", MagicMock())

@@ -46,12 +46,14 @@ class StepRecord:
     episode_id links back to the full candidates + execution data in the DB.
     """
     step_index: int
-    episode_id: int         # FK → episodes.id
+    episode_id: int             # FK → episodes.id
     page_url: str
     axtree_hash: str
-    action_type: str        # e.g. "click", "type"
-    action_source: str      # "dom" or "vision"
+    action_type: str            # e.g. "click", "type"
+    action_source: str          # "dom" or "vision"
     success: bool
+    action_text: Optional[str] = None    # text typed/selected, if any
+    element_name: Optional[str] = None  # element label from axtree (dom agent only)
 
 
 @dataclass

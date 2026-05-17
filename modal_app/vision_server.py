@@ -70,7 +70,7 @@ class VisionModel:
         self.model.eval()
 
     @modal.method()
-    def propose(self, screenshot_bytes: bytes, task: str) -> list[dict]:
+    def propose(self, screenshot_bytes: bytes, task: str, memory_context: str | None = None) -> list[dict]:
         """
         Run Qwen2.5-VL on a screenshot and return raw action proposals as dicts.
 
@@ -94,7 +94,7 @@ class VisionModel:
                     "role": "user",
                     "content": [
                         {"type": "image", "image": image},
-                        {"type": "text", "text": f"Task: {task}"},
+                        {"type": "text", "text": f"Task: {task}" + (f"\n\n{memory_context}" if memory_context else "")},
                     ],
                 },
             ]

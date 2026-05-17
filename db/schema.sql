@@ -77,3 +77,19 @@ CREATE TABLE IF NOT EXISTS steps (
 
 CREATE INDEX IF NOT EXISTS idx_steps_session    ON steps(session_id);
 CREATE INDEX IF NOT EXISTS idx_steps_episode    ON steps(episode_id);
+
+CREATE TABLE IF NOT EXISTS rollbacks (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+
+    triggered_at_step   INTEGER NOT NULL,   -- step index that caused the rollback
+    rolled_back_to_step INTEGER NOT NULL,   -- checkpoint step we restored to
+
+    -- why rollback was triggered
+    -- "cascade" (automatic) | "manual" (API request)
+    reason              TEXT    NOT NULL,
+
+    created_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rollbacks_session ON rollbacks(session_id);

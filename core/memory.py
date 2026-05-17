@@ -51,15 +51,25 @@ def _step_text(step: StepRecord, axtree_snippet: str) -> str:
     Serialise a completed step into a short string for embedding.
 
     Format:
-        action: <type> (<source>) | success: <true/false> | page: <axtree>
+        action: <type> (<source>) [into "<element>" with "<text>"] | success: <true/false> | page: <axtree>
 
-    The axtree is truncated to keep embedding text short — the first 400
-    characters capture the most prominent elements on the page.
+    The element name and typed text are included when available so the
+    agent can distinguish "typed into custname" from "typed into custemail"
+    — without this, all type actions look identical in embedding space.
+
+    The axtree is truncated to keep embedding text short.
     """
     outcome = "true" if step.success else "false"
     snippet = axtree_snippet[:400].replace("\n", " ")
+
+    action_detail = f"{step.action_type} ({step.action_source})"
+    if step.element_name:
+        action_detail += f' into "{step.element_name}"'
+    if step.action_text:
+        action_detail += f' with "{step.action_text}"'
+
     return (
-        f"action: {step.action_type} ({step.action_source}) | "
+        f"action: {action_detail} | "
         f"success: {outcome} | "
         f"page: {snippet}"
     )
@@ -134,9 +144,14 @@ class EpisodicMemory:
         for entry in entries:
             outcome = "OK" if entry.step.success else "FAILED"
             snippet = entry.axtree_snippet[:200].replace("\n", " ")
+            action_detail = f"{entry.step.action_type} ({entry.step.action_source})"
+            if entry.step.element_name:
+                action_detail += f' into "{entry.step.element_name}"'
+            if entry.step.action_text:
+                action_detail += f' with "{entry.step.action_text}"'
             lines.append(
                 f"Step {entry.step.step_index + 1} — "
-                f"{entry.step.action_type} ({entry.step.action_source}) → {outcome} "
+                f"{action_detail} → {outcome} "
                 f"| page was: {snippet}"
             )
         return "\n".join(lines)

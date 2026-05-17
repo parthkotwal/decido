@@ -102,12 +102,19 @@ _EXTRACT_JS = """
                 || TAG_TO_ROLE[tag]
                 || tag;
 
+            // Capture current value for inputs/textareas so the agent
+            // can see which fields are already filled
+            const value = (tag === 'input' || tag === 'textarea')
+                ? (el.value || '')
+                : '';
+
             return {
                 index: i,
                 role,
                 name: resolveLabel(el),
                 bbox: [rect.left, rect.top, rect.right, rect.bottom],
                 focused: document.activeElement === el,
+                value,
             };
         })
         .filter(Boolean);
@@ -131,15 +138,18 @@ async def _build_node_index(page: Page) -> tuple[dict[int, dict], list[str]]:
         bbox: BBox = (x1, y1, x2, y2)
         name = el["name"] or role
 
+        value = el.get("value", "")
         index[nid] = {
             "role": role,
             "name": name,
             "action_type": action_type,
             "bbox": bbox,
             "focused": el["focused"],
+            "value": value,
         }
+        value_str = f' value="{value}"' if value else ""
         lines.append(
-            f'[{nid}] {role} "{name}" bbox=({round(x1)},{round(y1)},{round(x2)},{round(y2)})'
+            f'[{nid}] {role} "{name}"{value_str} bbox=({round(x1)},{round(y1)},{round(x2)},{round(y2)})'
         )
 
     return index, lines
@@ -147,9 +157,12 @@ async def _build_node_index(page: Page) -> tuple[dict[int, dict], list[str]]:
 
 # ── LM call ───────────────────────────────────────────────────────────────────
 
-def _build_prompt(task: str, axtree_lines: list[str]) -> str:
+def _build_prompt(task: str, axtree_lines: list[str], memory_context: str | None = None) -> str:
     tree_text = "\n".join(axtree_lines) if axtree_lines else "(no interactive elements found)"
-    return f"Task: {task}\n\nAccessibility tree:\n{tree_text}"
+    prompt = f"Task: {task}\n\nAccessibility tree:\n{tree_text}"
+    if memory_context:
+        prompt += f"\n\n{memory_context}"
+    return prompt
 
 
 def _parse_response(text: str) -> list[dict]:
@@ -172,9 +185,13 @@ async def propose_actions(
     task: str,
     max_candidates: int = 3,
     api_key: str | None = None,
+    memory_context: str | None = None,
 ) -> list[Action]:
     """
     Use an LM to propose candidate Actions from the page DOM.
+
+    memory_context: optional retrieved history block from EpisodicMemory,
+    injected below the axtree so the agent knows what has already been tried.
 
     Returns up to max_candidates Actions sorted by confidence descending.
     Returns an empty list (rather than raising) on any API or parse failure.
@@ -184,7 +201,7 @@ async def propose_actions(
         return []
 
     client = AsyncOpenAI(api_key=api_key or os.environ["OPENAI_API_KEY"])
-    prompt = _build_prompt(task, axtree_lines)
+    prompt = _build_prompt(task, axtree_lines, memory_context)
 
     try:
         response = await client.chat.completions.create(
