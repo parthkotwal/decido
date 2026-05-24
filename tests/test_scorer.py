@@ -34,9 +34,17 @@ class TestScoreCandidates:
 
         for s in scored:
             assert s.agreement == pytest.approx(1.0)
-            # keyword_match=0.5 (no element name/text), type_coherence=1.0 (no role)
-            expected = _W_AGREEMENT * 1.0 + _W_KEYWORD * 0.5 + _W_COHERENCE * 1.0
-            assert s.score == pytest.approx(expected)
+
+        dom_scored    = next(s for s in scored if s.action.source == "dom")
+        vision_scored = next(s for s in scored if s.action.source == "vision")
+
+        # DOM: no element name → keyword=None → redistributed weights (agreement+keyword → agreement)
+        dom_expected = (_W_AGREEMENT + _W_KEYWORD) * 1.0 + _W_COHERENCE * 1.0
+        assert dom_scored.score == pytest.approx(dom_expected)
+
+        # Vision: no name/text → keyword=None → redistributed weights
+        vision_expected = (_W_AGREEMENT + _W_KEYWORD) * 1.0 + _W_COHERENCE * 1.0
+        assert vision_scored.score == pytest.approx(vision_expected)
 
     def test_no_agreement_when_single_source(self):
         candidates = [

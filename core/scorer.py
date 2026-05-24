@@ -44,20 +44,27 @@ def _best_agreement(action: Action, others: list[Action]) -> float:
     return max(iou(action, o) for o in others)
 
 
-def _keyword_match(action: Action, task: str) -> float:
-    """Fraction of meaningful task words found in the element name or typed text."""
+def _keyword_match(action: Action, task: str) -> float | None:
+    """Fraction of meaningful task words found in the element's label/name.
+
+    Only uses the element's name metadata — NOT action.text (which is the
+    typed value, not element identity). This means the feature measures
+    "is this the right element?" rather than "is the value being typed
+    relevant to the task?"
+
+    Returns None when the candidate has no element name (vision candidates,
+    unnamed DOM elements). The caller redistributes the keyword weight to
+    agreement so these candidates aren't penalised for lacking metadata.
+    """
+    name = (action.metadata.get("name") or "").strip()
+    if not name:
+        return None
+
     task_words = set(re.findall(r'\b[a-z]{3,}\b', task.lower())) - _STOP_WORDS
     if not task_words:
-        return 0.5  # no signal — neutral
+        return None
 
-    haystack = " ".join(filter(None, [
-        action.metadata.get("name") or "",
-        action.text or "",
-    ])).lower()
-
-    if not haystack.strip():
-        return 0.5  # no element text to compare (common for vision) — neutral
-
+    haystack = name.lower()
     matched = sum(1 for w in task_words if w in haystack)
     return matched / len(task_words)
 
@@ -94,15 +101,28 @@ def score_candidates(candidates: list[Action], task: str = "") -> list[ScoredAct
     for action in candidates:
         others         = vision_candidates if action.source == "dom" else dom_candidates
         agreement      = _best_agreement(action, others)
-        keyword        = _keyword_match(action, task)
+        keyword_raw    = _keyword_match(action, task)
         coherence      = _type_coherence(action)
-        score          = _W_AGREEMENT * agreement + _W_KEYWORD * keyword + _W_COHERENCE * coherence
+
+        if keyword_raw is not None:
+            score = (_W_AGREEMENT * agreement
+                     + _W_KEYWORD * keyword_raw
+                     + _W_COHERENCE * coherence)
+            keyword_val = keyword_raw
+        else:
+            # No keyword signal (vision candidates) — redistribute keyword
+            # weight to agreement so they compete on spatial accuracy instead
+            # of being penalised for missing text metadata.
+            w_agr = _W_AGREEMENT + _W_KEYWORD   # 0.85
+            w_coh = _W_COHERENCE                 # 0.15
+            score = w_agr * agreement + w_coh * coherence
+            keyword_val = 0.0
 
         scored.append(ScoredAction(
             action=action,
             score=score,
             agreement=agreement,
-            keyword_match=keyword,
+            keyword_match=keyword_val,
             type_coherence=coherence,
         ))
 

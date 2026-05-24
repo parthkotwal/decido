@@ -25,7 +25,15 @@ _ROLE_TO_ACTION: dict[str, ActionType] = {
 
 _SYSTEM_PROMPT = """\
 You are a browser automation agent. Given an accessibility tree and a task, \
-propose up to 3 actions that would best complete the task.
+propose the NEXT 1-3 actions to take, in the order they should be executed.
+
+Rules:
+  - Look at the "value" attribute of each element. If a field already \
+contains the correct value, skip it — do NOT re-fill it.
+  - Fill ALL required fields before clicking submit/send/confirm buttons. \
+Only propose a submit action when every field the task mentions is filled.
+  - Propose actions in dependency order: inputs before submit, dropdowns \
+before dependent fields.
 
 Respond ONLY with a JSON array. Each element must have:
   - node_id   (integer from the tree)
@@ -34,8 +42,8 @@ Respond ONLY with a JSON array. Each element must have:
 
 Example:
 [
-  {"node_id": 12, "action": "click"},
-  {"node_id": 7,  "action": "type", "text": "hello@example.com"}
+  {"node_id": 7,  "action": "type", "text": "hello@example.com"},
+  {"node_id": 12, "action": "click"}
 ]
 """
 
@@ -234,7 +242,7 @@ async def propose_actions(
                     bbox=node["bbox"],
                     source="dom",
                     text=text,
-                    element_ref=node.get("element_ref"),
+                    element_ref=str(nid),
                     metadata={"role": node["role"], "name": node["name"]},
                 )
             )

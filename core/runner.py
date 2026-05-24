@@ -246,11 +246,6 @@ async def run_session(
                 termination_reason = "loop"
                 break
 
-        # ── 14. Error on execution → action_failure ───────────────────────────
-        if result.error:
-            termination_reason = "action_failure"
-            break
-
     # ── Finalise session ──────────────────────────────────────────────────────
     final_reason = termination_reason or "step_limit"
     session.terminate(final_reason)
