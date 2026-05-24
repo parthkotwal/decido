@@ -2,12 +2,11 @@ import pytest
 from core.action import Action, ActionType, iou
 
 
-def make_action(bbox, source="dom", confidence=0.9):
+def make_action(bbox, source="dom"):
     return Action(
         action_type=ActionType.CLICK,
         bbox=bbox,
         source=source,
-        confidence=confidence,
     )
 
 

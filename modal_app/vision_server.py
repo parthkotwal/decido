@@ -28,17 +28,15 @@ You are a browser automation agent. Given a screenshot and a task, propose up \
 to 3 UI actions that would best complete the task.
 
 Respond ONLY with a JSON array. Each element must have:
-  - action     (one of: click, type, scroll, select, hover)
-  - bbox       ([x1, y1, x2, y2] in pixel coordinates)
-  - confidence (float 0–1, reflecting how certain you are this action advances the task;
-                vary this based on element clarity, label match, and context)
-  - text       (string, required for "type" and "select", omit otherwise)
+  - action  (one of: click, type, scroll, select, hover)
+  - bbox    ([x1, y1, x2, y2] in pixel coordinates)
+  - text    (string, required for "type" and "select", omit otherwise)
 
-Example (confidence values are illustrative — set yours based on actual certainty):
+Example:
 [
-  {"action": "click", "bbox": [120, 340, 200, 360], "confidence": 0.94},
-  {"action": "type",  "bbox": [100, 200, 300, 230], "confidence": 0.73, "text": "hello@example.com"},
-  {"action": "click", "bbox": [340, 510, 420, 535], "confidence": 0.61}
+  {"action": "click", "bbox": [120, 340, 200, 360]},
+  {"action": "type",  "bbox": [100, 200, 300, 230], "text": "hello@example.com"},
+  {"action": "click", "bbox": [340, 510, 420, 535]}
 ]
 """
 

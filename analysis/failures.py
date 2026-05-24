@@ -21,7 +21,6 @@ class Candidate:
     selected: bool
     source: str
     action_type: str
-    confidence: float
     agreement: float
     score: float
     text: str | None
@@ -48,7 +47,7 @@ def _fetch_candidates(db: sqlite3.Connection, episode_id: int) -> list[Candidate
     rows = db.execute(
         """
         SELECT rank, selected, source, action_type,
-               confidence, agreement, score, text, success
+               agreement, score, text, success
         FROM candidates
         WHERE episode_id = ?
         ORDER BY rank
@@ -61,7 +60,6 @@ def _fetch_candidates(db: sqlite3.Connection, episode_id: int) -> list[Candidate
             selected=bool(r["selected"]),
             source=r["source"],
             action_type=r["action_type"],
-            confidence=r["confidence"],
             agreement=r["agreement"],
             score=r["score"],
             text=r["text"],
@@ -84,7 +82,7 @@ def _format_candidate(c: Candidate) -> str:
     text_str = f' text="{c.text}"' if c.text else ""
     return (
         f"  {marker} [{c.rank}] {c.source:<6} {c.action_type:<6}"
-        f"  conf={c.confidence:.2f}  agree={c.agreement:.3f}  score={c.score:.3f}"
+        f"  agree={c.agreement:.3f}  score={c.score:.3f}"
         f"{text_str}"
     )
 

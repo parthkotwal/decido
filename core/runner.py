@@ -35,7 +35,7 @@ from core.utils import timed
 from execution.executor import execute
 from feedback.logger import close_session, log_candidates, log_step
 
-MAX_STEPS = 15          # soft step limit — last resort only
+MAX_STEPS = 25          # soft step limit — last resort only
 LOOP_WINDOW = 2         # how many identical hashes trigger loop detection
 EVALUATOR_INTERVAL = 5  # call evaluator every N successful steps
 
@@ -136,7 +136,7 @@ async def run_session(
             break
 
         # ── 5. Score + rank ───────────────────────────────────────────────────
-        scored = score_candidates(all_candidates)
+        scored = score_candidates(all_candidates, session.task)
         best = select_best(scored)
 
         if best is None:

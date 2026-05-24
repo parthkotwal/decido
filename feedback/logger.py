@@ -51,7 +51,7 @@ async def log_candidates(
                 source, action_type,
                 bbox_x1, bbox_y1, bbox_x2, bbox_y2,
                 text, element_ref,
-                confidence, agreement, score,
+                agreement, score,
                 success, signal,
                 url_before, url_after, mutation_count,
                 error, metadata
@@ -73,14 +73,18 @@ async def log_candidates(
                 action.source, action.action_type.value,
                 x1, y1, x2, y2,
                 action.text, action.element_ref,
-                sc.confidence, sc.agreement, sc.score,
+                sc.agreement, sc.score,
                 int(result.success) if is_selected else None,
                 result.signal if is_selected else None,
                 result.url_before,
                 result.url_after if is_selected else None,
                 result.mutation_count if is_selected else None,
                 result.error if is_selected else None,
-                json.dumps(action.metadata),
+                json.dumps({
+                    **action.metadata,
+                    "keyword_match": sc.keyword_match,
+                    "type_coherence": sc.type_coherence,
+                }),
             ),
         )
 

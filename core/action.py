@@ -20,7 +20,6 @@ class Action:
     action_type: ActionType
     bbox: BBox
     source: str                     # "dom" or "vision"
-    confidence: float               # agent's self-reported confidence [0, 1]
     text: Optional[str] = None      # payload for "type" and "select"
     element_ref: Optional[str] = None  # axtree node ID, DOM agent only
     scroll_direction: Optional[str] = None  # "up" / "down", scroll only

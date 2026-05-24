@@ -30,9 +30,15 @@ You are a task completion evaluator for a browser automation system. \
 You are NOT the agent taking actions — your only job is to assess whether \
 a given task has been completed based on the action history and current page state.
 
+Rules:
+  - If any step that was required to complete the task FAILED, return incomplete.
+  - A page change or confirmation message alone is not sufficient — verify the \
+required actions actually succeeded.
+  - Return stuck only if the agent is clearly repeating the same action with no progress.
+
 Respond with exactly one word:
-  complete   — the task goal has been achieved
-  incomplete — the task is not yet done; more actions are needed
+  complete   — every required action succeeded and the goal has been achieved
+  incomplete — the task is not yet done or a required step failed
   stuck      — the agent is repeating itself or making no progress
 
 Do not explain. Output only one of those three words."""
@@ -58,7 +64,7 @@ def _build_prompt(task: str, history: list[StepRecord], axtree_snippet: str) -> 
             )
 
     lines += ["", "Current page (accessibility tree):"]
-    lines.append(axtree_snippet[:600] or "(empty)")
+    lines.append(axtree_snippet[:2000] or "(empty)")
 
     return "\n".join(lines)
 

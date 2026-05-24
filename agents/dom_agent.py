@@ -30,13 +30,12 @@ propose up to 3 actions that would best complete the task.
 Respond ONLY with a JSON array. Each element must have:
   - node_id   (integer from the tree)
   - action    (one of: click, type, scroll, select, hover)
-  - confidence (float 0–1)
   - text      (string, required for "type" and "select", omit otherwise)
 
 Example:
 [
-  {"node_id": 12, "action": "click", "confidence": 0.92},
-  {"node_id": 7,  "action": "type",  "confidence": 0.80, "text": "hello@example.com"}
+  {"node_id": 12, "action": "click"},
+  {"node_id": 7,  "action": "type", "text": "hello@example.com"}
 ]
 """
 
@@ -193,7 +192,7 @@ async def propose_actions(
     memory_context: optional retrieved history block from EpisodicMemory,
     injected below the axtree so the agent knows what has already been tried.
 
-    Returns up to max_candidates Actions sorted by confidence descending.
+    Returns up to max_candidates Actions.
     Returns an empty list (rather than raising) on any API or parse failure.
     """
     index, axtree_lines = await _build_node_index(page)
@@ -234,7 +233,6 @@ async def propose_actions(
                     action_type=ActionType(p["action"]),
                     bbox=node["bbox"],
                     source="dom",
-                    confidence=min(1.0, max(0.0, float(p.get("confidence", 0.5)))),
                     text=text,
                     element_ref=node.get("element_ref"),
                     metadata={"role": node["role"], "name": node["name"]},
@@ -243,5 +241,4 @@ async def propose_actions(
         except (KeyError, ValueError):
             continue
 
-    actions.sort(key=lambda a: a.confidence, reverse=True)
     return actions[:max_candidates]

@@ -39,7 +39,6 @@ async def propose_actions(
         if action is not None:
             actions.append(action)
 
-    actions.sort(key=lambda a: a.confidence, reverse=True)
     return actions[:max_candidates]
 
 
@@ -64,7 +63,6 @@ def _parse_proposal(p: dict) -> Action | None:
         if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
             return None
 
-        confidence = float(p.get("confidence", 0.5))
         text = p.get("text") or None
 
         # type/select without text is a malformed proposal — reject it
@@ -75,7 +73,6 @@ def _parse_proposal(p: dict) -> Action | None:
             action_type=ActionType(raw_action),
             bbox=bbox,
             source="vision",
-            confidence=min(1.0, max(0.0, confidence)),
             text=text,
             metadata={"raw": p},
         )

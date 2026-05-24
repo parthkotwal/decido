@@ -13,19 +13,16 @@ class TestVisionParseProposal:
         action = _parse_proposal({
             "action": "click",
             "bbox": [10, 20, 100, 80],
-            "confidence": 0.9,
         })
         assert action is not None
         assert action.action_type.value == "click"
         assert action.bbox == (10.0, 20.0, 100.0, 80.0)
-        assert action.confidence == pytest.approx(0.9)
         assert action.text is None
 
     def test_valid_type_with_text(self):
         action = _parse_proposal({
             "action": "type",
             "bbox": [0, 0, 200, 40],
-            "confidence": 0.85,
             "text": "hello@example.com",
         })
         assert action is not None
@@ -35,14 +32,12 @@ class TestVisionParseProposal:
         assert _parse_proposal({
             "action": "type",
             "bbox": [0, 0, 200, 40],
-            "confidence": 0.85,
         }) is None
 
     def test_type_with_empty_text_rejected(self):
         assert _parse_proposal({
             "action": "type",
             "bbox": [0, 0, 200, 40],
-            "confidence": 0.85,
             "text": "",
         }) is None
 
@@ -50,51 +45,33 @@ class TestVisionParseProposal:
         assert _parse_proposal({
             "action": "select",
             "bbox": [0, 0, 200, 40],
-            "confidence": 0.7,
         }) is None
 
     def test_invalid_action_type_rejected(self):
         assert _parse_proposal({
             "action": "explode",
             "bbox": [0, 0, 100, 100],
-            "confidence": 0.9,
         }) is None
 
     def test_zero_area_bbox_rejected(self):
         assert _parse_proposal({
             "action": "click",
-            "bbox": [50, 50, 50, 50],  # zero area
-            "confidence": 0.9,
+            "bbox": [50, 50, 50, 50],
         }) is None
 
     def test_inverted_bbox_rejected(self):
         assert _parse_proposal({
             "action": "click",
-            "bbox": [100, 100, 10, 10],  # x2 < x1
-            "confidence": 0.9,
+            "bbox": [100, 100, 10, 10],
         }) is None
-
-    def test_confidence_clamped_to_one(self):
-        action = _parse_proposal({
-            "action": "click",
-            "bbox": [0, 0, 100, 100],
-            "confidence": 5.0,  # out of range
-        })
-        assert action is not None
-        assert action.confidence == pytest.approx(1.0)
 
     def test_missing_bbox_rejected(self):
-        assert _parse_proposal({
-            "action": "click",
-            "confidence": 0.9,
-        }) is None
+        assert _parse_proposal({"action": "click"}) is None
 
     def test_click_with_empty_text_coerced_to_none(self):
-        # click doesn't need text — empty string should become None, not fail
         action = _parse_proposal({
             "action": "click",
             "bbox": [0, 0, 100, 100],
-            "confidence": 0.9,
             "text": "",
         })
         assert action is not None
@@ -103,13 +80,13 @@ class TestVisionParseProposal:
 
 class TestDomParseResponse:
     def test_valid_json_array(self):
-        raw = '[{"node_id": 1, "action": "click", "confidence": 0.9}]'
+        raw = '[{"node_id": 1, "action": "click"}]'
         result = _parse_response(raw)
         assert len(result) == 1
         assert result[0]["node_id"] == 1
 
     def test_markdown_fenced_json(self):
-        raw = "```json\n[{\"node_id\": 2, \"action\": \"click\", \"confidence\": 0.8}]\n```"
+        raw = '```json\n[{"node_id": 2, "action": "click"}]\n```'
         result = _parse_response(raw)
         assert len(result) == 1
         assert result[0]["node_id"] == 2

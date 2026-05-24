@@ -69,7 +69,6 @@ class ActionDetail(BaseModel):
     action_type: str
     bbox: tuple[float, float, float, float]
     text: Optional[str]
-    confidence: float
     agreement: float
     score: float
 
@@ -135,7 +134,7 @@ async def act(req: ActRequest) -> ActResponse:
         if not all_candidates:
             raise HTTPException(status_code=422, detail="No action candidates found")
 
-        scored = score_candidates(all_candidates)
+        scored = score_candidates(all_candidates, req.task)
         best = select_best(scored)
 
         if best is None:
@@ -154,7 +153,6 @@ async def act(req: ActRequest) -> ActResponse:
                 action_type=best.action.action_type.value,
                 bbox=best.action.bbox,
                 text=best.action.text,
-                confidence=best.confidence,
                 agreement=best.agreement,
                 score=best.score,
             ),

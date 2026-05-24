@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS candidates (
     text            TEXT,
     element_ref     TEXT,
 
-    confidence      REAL    NOT NULL,
     agreement       REAL    NOT NULL,
     score           REAL    NOT NULL,
 

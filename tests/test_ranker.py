@@ -4,18 +4,18 @@ from core.scorer import ScoredAction
 from core.ranker import select_best, select_top_n
 
 
-def make_scored(score, agreement=0.0, source="dom", confidence=0.8):
+def make_scored(score, agreement=0.0, source="dom"):
     action = Action(
         action_type=ActionType.CLICK,
         bbox=(0, 0, 50, 50),
         source=source,
-        confidence=confidence,
     )
     return ScoredAction(
         action=action,
         score=score,
-        confidence=confidence,
         agreement=agreement,
+        keyword_match=0.5,
+        type_coherence=1.0,
     )
 
 
