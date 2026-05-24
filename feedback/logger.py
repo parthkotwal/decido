@@ -1,11 +1,12 @@
 import json
+import os
 import aiosqlite
 
 from core.scorer import ScoredAction
 from core.session import Session, StepRecord
 from execution.executor import ExecutionResult
 
-DB_PATH = "decido.db"
+DB_PATH = os.getenv("DB_PATH", "decido.db")
 
 
 async def init_db(db: aiosqlite.Connection) -> None:

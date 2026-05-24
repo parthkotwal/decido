@@ -1,0 +1,10 @@
+.env
+decido.db
+.git
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+modal_app/
+memory/
