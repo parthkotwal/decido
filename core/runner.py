@@ -18,10 +18,13 @@ The runner mutates it and persists each step via logger.py.
 
 import asyncio
 import hashlib
+import logging
 from typing import Optional
 
 from playwright.async_api import Page
 import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 from agents import dom_agent, vision_agent
 from agents.dom_agent import _build_node_index
@@ -46,24 +49,42 @@ def _axtree_hash(axtree: str) -> str:
 
 
 
+REPEAT_WINDOW = 3       # how many same-coordinate actions trigger coordinate loop
+
 def _is_looping(session: Session, current_hash: str) -> bool:
     """
     Return True if the session is stuck in a loop.
 
-    Fires when the last LOOP_WINDOW steps all:
-      - Have the same axtree hash as the current page (structure unchanged), AND
-      - Failed (no success signal)
-
-    Requiring both conditions prevents false positives on form-filling tasks
-    where the agent correctly types into multiple fields on the same page
-    (same axtree structure, but each step succeeds).
+    Two detection methods:
+      1. Hash loop: last LOOP_WINDOW steps all failed with the same axtree
+         hash — page is unchanged and nothing is working.
+      2. Coordinate loop: last REPEAT_WINDOW steps all target the same bbox
+         region — agent is clicking/typing the same element repeatedly,
+         even if each action "succeeds" (e.g. toggling a checkbox).
     """
     recent = session.steps[-LOOP_WINDOW:]
-    return (
+    if (
         len(recent) == LOOP_WINDOW
         and all(s.axtree_hash == current_hash for s in recent)
         and all(not s.success for s in recent)
-    )
+    ):
+        return True
+
+    recent_with_bbox = session.steps[-REPEAT_WINDOW:]
+    if len(recent_with_bbox) == REPEAT_WINDOW and all(s.bbox for s in recent_with_bbox):
+        first = recent_with_bbox[0]
+        if all(
+            s.action_type == first.action_type and _bbox_close(s.bbox, first.bbox)
+            for s in recent_with_bbox[1:]
+        ):
+            return True
+
+    return False
+
+
+def _bbox_close(a: tuple, b: tuple, threshold: float = 20.0) -> bool:
+    """True if two bboxes are within threshold pixels on all edges."""
+    return all(abs(a[i] - b[i]) <= threshold for i in range(4))
 
 
 async def run_session(
@@ -72,6 +93,7 @@ async def run_session(
     session: Session,
     episode_metadata_base: dict | None = None,
     pending_rollbacks: dict[int, int] | None = None,
+    agents: str = "both",
 ) -> Session:
     """
     Drive session to completion and return the finished Session.
@@ -100,18 +122,36 @@ async def run_session(
         _, axtree_lines = await _build_node_index(page)
         axtree_snippet = "\n".join(axtree_lines)
         current_hash = _axtree_hash(axtree_snippet)
+        logger.info(
+            "step %d | url=%s | axtree_lines=%d | hash=%s",
+            step_index, page.url, len(axtree_lines), current_hash[:8],
+        )
 
         # ── 2. Retrieve memory context ─────────────────────────────────────────
         retrieved = memory.retrieve(session.task, axtree_snippet, top_k=3)
         memory_context = memory.format_for_prompt(retrieved) or None
 
-        # ── 3. Run both agents in parallel ────────────────────────────────────
-        (dom_candidates, dom_elapsed), (vis_candidates, vis_elapsed) = (
-            await asyncio.gather(
-                timed(dom_agent.propose_actions(page, session.task, memory_context=memory_context)),
-                timed(vision_agent.propose_actions(page, session.task, memory_context=memory_context)),
+        # ── 3. Run agent(s) ───────────────────────────────────────────────────
+        dom_candidates: list = []
+        vis_candidates: list = []
+        dom_elapsed = 0.0
+        vis_elapsed = 0.0
+
+        if agents == "both":
+            (dom_candidates, dom_elapsed), (vis_candidates, vis_elapsed) = (
+                await asyncio.gather(
+                    timed(dom_agent.propose_actions(page, session.task, memory_context=memory_context)),
+                    timed(vision_agent.propose_actions(page, session.task, memory_context=memory_context)),
+                )
             )
-        )
+        elif agents == "dom":
+            dom_candidates, dom_elapsed = await timed(
+                dom_agent.propose_actions(page, session.task, memory_context=memory_context)
+            )
+        elif agents == "vision":
+            vis_candidates, vis_elapsed = await timed(
+                vision_agent.propose_actions(page, session.task, memory_context=memory_context)
+            )
 
         episode_meta = {
             **(episode_metadata_base or {}),
@@ -119,12 +159,18 @@ async def run_session(
             "vision_latency_ms": round(vis_elapsed * 1000),
             "dom_candidates":    len(dom_candidates),
             "vision_candidates": len(vis_candidates),
-            "dom_failed":        len(dom_candidates) == 0,
-            "vision_failed":     len(vis_candidates) == 0,
+            "dom_failed":        agents in ("both", "dom") and len(dom_candidates) == 0,
+            "vision_failed":     agents in ("both", "vision") and len(vis_candidates) == 0,
             "step_index":        step_index,
+            "agents":            agents,
         }
 
         all_candidates = dom_candidates + vis_candidates
+        logger.info(
+            "step %d | dom=%d (%.1fs) | vision=%d (%.1fs) | total=%d",
+            step_index, len(dom_candidates), dom_elapsed,
+            len(vis_candidates), vis_elapsed, len(all_candidates),
+        )
 
         # ── 4. Agent done signal — nothing left to do ─────────────────────────
         if not all_candidates:
@@ -154,7 +200,18 @@ async def run_session(
             break
 
         # ── 8. Execute ────────────────────────────────────────────────────────
+        logger.info(
+            "step %d | exec %s %s @ (%.0f,%.0f) score=%.3f src=%s",
+            step_index, best.action.action_type.value,
+            (best.action.text or "")[:30],
+            best.action.center()[0], best.action.center()[1],
+            best.score, best.action.source,
+        )
         result = await execute(page, best)
+        logger.info(
+            "step %d | result success=%s signal=%s err=%s",
+            step_index, result.success, result.signal, result.error,
+        )
         episode_id = await log_candidates(db, session.task, scored, best, result, episode_meta)
 
         # ── 9. Record step ────────────────────────────────────────────────────
@@ -168,6 +225,7 @@ async def run_session(
             success=result.success,
             action_text=best.action.text,
             element_name=best.action.metadata.get("name"),
+            bbox=best.action.bbox,
         )
 
         is_checkpoint = result.success
@@ -204,12 +262,18 @@ async def run_session(
             _, new_axtree_lines = await _build_node_index(page)
             new_axtree = "\n".join(new_axtree_lines)
 
-            # Structural heuristic A: explicit submit element name + URL change.
-            # A click on something named "submit/send/confirm/..." that caused
-            # navigation is a reliable completion signal without needing the LM.
-            element_name = (best.action.metadata.get("name") or "").lower()
+            # Structural heuristic A: submit detection via element name or task text.
+            # A click that caused navigation + either the element is named
+            # "submit/send/..." OR the task itself mentions submitting.
             submit_words = ("submit", "send", "confirm", "place", "order", "done")
-            if result.success and any(w in element_name for w in submit_words):
+            element_name = (best.action.metadata.get("name") or "").lower()
+            task_lower = session.task.lower()
+            element_match = any(w in element_name for w in submit_words)
+            task_match = (
+                best.action.action_type.value == "click"
+                and any(w in task_lower for w in submit_words)
+            )
+            if result.success and (element_match or task_match):
                 termination_reason = "success"
                 break
 
@@ -248,6 +312,7 @@ async def run_session(
 
     # ── Finalise session ──────────────────────────────────────────────────────
     final_reason = termination_reason or "step_limit"
+    logger.info("session %d terminated: %s after %d steps", session.id, final_reason, len(session.steps))
     session.terminate(final_reason)
     await close_session(db, session.id, final_reason)
 

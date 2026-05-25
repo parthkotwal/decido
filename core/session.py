@@ -54,6 +54,7 @@ class StepRecord:
     success: bool
     action_text: Optional[str] = None    # text typed/selected, if any
     element_name: Optional[str] = None  # element label from axtree (dom agent only)
+    bbox: Optional[tuple[float, float, float, float]] = None
 
 
 @dataclass

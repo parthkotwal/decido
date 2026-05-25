@@ -1,8 +1,14 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 from typing import Optional
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s  %(message)s",
+)
 
 import aiosqlite
 from fastapi import FastAPI, HTTPException
@@ -62,6 +68,7 @@ class ActRequest(BaseModel):
 class TaskRequest(BaseModel):
     task: str
     url: str
+    agents: str = "both"    # "both" | "dom" | "vision"
 
 
 class ActionDetail(BaseModel):
@@ -192,6 +199,7 @@ async def task(req: TaskRequest) -> TaskResponse:
                 db=state.db,
                 session=session,
                 pending_rollbacks=state.pending_rollbacks,
+                agents=req.agents,
             )
         finally:
             state.active_sessions.pop(session_id, None)

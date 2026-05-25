@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 
 from openai import AsyncOpenAI
 from playwright.async_api import Page
 
 from core.action import Action, ActionType, BBox
+
+logger = logging.getLogger(__name__)
 
 MODEL = "gpt-5-nano"
 
@@ -220,6 +223,7 @@ async def propose_actions(
         )
         raw = response.choices[0].message.content or ""
     except Exception:
+        logger.exception("dom agent: LM call failed")
         return []
 
     proposals = _parse_response(raw)

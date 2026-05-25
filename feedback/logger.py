@@ -12,6 +12,12 @@ DB_PATH = os.getenv("DB_PATH", "decido.db")
 async def init_db(db: aiosqlite.Connection) -> None:
     with open("db/schema.sql") as f:
         await db.executescript(f.read())
+
+    # Migration: drop legacy confidence column if it exists
+    cols = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(candidates)")]
+    if "confidence" in cols:
+        await db.execute("ALTER TABLE candidates DROP COLUMN confidence")
+
     await db.commit()
 
 
@@ -61,7 +67,7 @@ async def log_candidates(
                 ?, ?,
                 ?, ?, ?, ?,
                 ?, ?,
-                ?, ?, ?,
+                ?, ?,
                 ?, ?,
                 ?, ?, ?,
                 ?, ?

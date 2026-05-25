@@ -1,7 +1,10 @@
+import logging
 import modal
 from playwright.async_api import Page
 
 from core.action import Action, ActionType, BBox
+
+logger = logging.getLogger(__name__)
 
 _VisionModel = modal.Cls.from_name("decido-vision", "VisionModel")
 
@@ -24,6 +27,7 @@ async def propose_actions(
     try:
         screenshot_bytes: bytes = await page.screenshot(type="png", full_page=False)
     except Exception:
+        logger.exception("vision agent: screenshot failed")
         return []
 
     try:
@@ -31,6 +35,7 @@ async def propose_actions(
             screenshot_bytes, task, memory_context
         )
     except Exception:
+        logger.exception("vision agent: Modal inference failed")
         return []
 
     actions: list[Action] = []

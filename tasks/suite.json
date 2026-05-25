@@ -1,0 +1,202 @@
+[
+  {
+    "name": "httpbin_form_fill",
+    "category": "form",
+    "difficulty": "easy",
+    "task": "Fill out the form: customer name is 'Alice Smith', size is Medium, topping is Cheese, and submit",
+    "url": "https://httpbin.org/forms/post",
+    "expected_steps": 5
+  },
+  {
+    "name": "herokuapp_login",
+    "category": "form",
+    "difficulty": "easy",
+    "task": "Log in with username 'tomsmith' and password 'SuperSecretPassword!'",
+    "url": "https://the-internet.herokuapp.com/login",
+    "expected_steps": 3
+  },
+  {
+    "name": "herokuapp_checkboxes",
+    "category": "selection",
+    "difficulty": "easy",
+    "task": "Check both checkboxes on the page",
+    "url": "https://the-internet.herokuapp.com/checkboxes",
+    "expected_steps": 2
+  },
+  {
+    "name": "herokuapp_dropdown",
+    "category": "selection",
+    "difficulty": "easy",
+    "task": "Select 'Option 2' from the dropdown",
+    "url": "https://the-internet.herokuapp.com/dropdown",
+    "expected_steps": 2
+  },
+  {
+    "name": "herokuapp_add_remove",
+    "category": "interaction",
+    "difficulty": "easy",
+    "task": "Click the 'Add Element' button three times, then click the first 'Delete' button",
+    "url": "https://the-internet.herokuapp.com/add_remove_elements/",
+    "expected_steps": 4
+  },
+  {
+    "name": "herokuapp_forgot_password",
+    "category": "form",
+    "difficulty": "easy",
+    "task": "Enter the email 'test@example.com' and click the Retrieve password button",
+    "url": "https://the-internet.herokuapp.com/forgot_password",
+    "expected_steps": 2
+  },
+  {
+    "name": "herokuapp_key_presses",
+    "category": "interaction",
+    "difficulty": "easy",
+    "task": "Click on the input field and type 'hello'",
+    "url": "https://the-internet.herokuapp.com/key_presses",
+    "expected_steps": 2
+  },
+  {
+    "name": "books_cheapest",
+    "category": "navigation",
+    "difficulty": "medium",
+    "task": "Find the cheapest book on this page and click on it to view its details",
+    "url": "https://books.toscrape.com/",
+    "expected_steps": 2
+  },
+  {
+    "name": "books_travel_category",
+    "category": "navigation",
+    "difficulty": "medium",
+    "task": "Click on the 'Travel' category in the sidebar",
+    "url": "https://books.toscrape.com/",
+    "expected_steps": 1
+  },
+  {
+    "name": "books_next_page",
+    "category": "navigation",
+    "difficulty": "easy",
+    "task": "Click the 'next' button to go to the second page of books",
+    "url": "https://books.toscrape.com/",
+    "expected_steps": 1
+  },
+  {
+    "name": "wikipedia_search",
+    "category": "navigation",
+    "difficulty": "medium",
+    "task": "Search for 'reinforcement learning' using the search box and click the search button",
+    "url": "https://en.wikipedia.org/wiki/Main_Page",
+    "expected_steps": 2
+  },
+  {
+    "name": "wikipedia_nav_link",
+    "category": "navigation",
+    "difficulty": "easy",
+    "task": "Click on the 'Contents' link in the left sidebar",
+    "url": "https://en.wikipedia.org/wiki/Main_Page",
+    "expected_steps": 1
+  },
+  {
+    "name": "herokuapp_basic_auth",
+    "category": "form",
+    "difficulty": "medium",
+    "task": "Enter username 'admin' and password 'admin' in the HTTP auth prompt and submit",
+    "url": "https://the-internet.herokuapp.com/basic_auth",
+    "expected_steps": 3
+  },
+  {
+    "name": "herokuapp_inputs",
+    "category": "form",
+    "difficulty": "easy",
+    "task": "Click on the number input field and type '42'",
+    "url": "https://the-internet.herokuapp.com/inputs",
+    "expected_steps": 2
+  },
+  {
+    "name": "herokuapp_dynamic_content",
+    "category": "navigation",
+    "difficulty": "medium",
+    "task": "Click the 'click here' link at the bottom of the page to reload with static content",
+    "url": "https://the-internet.herokuapp.com/dynamic_content",
+    "expected_steps": 1
+  },
+  {
+    "name": "demoqa_textbox",
+    "category": "form",
+    "difficulty": "medium",
+    "task": "Fill the form: Full Name is 'Bob Jones', Email is 'bob@test.com', Current Address is '123 Main St', and click Submit",
+    "url": "https://demoqa.com/text-box",
+    "expected_steps": 4
+  },
+  {
+    "name": "demoqa_checkbox",
+    "category": "selection",
+    "difficulty": "medium",
+    "task": "Expand the 'Home' checkbox tree and check the 'Desktop' checkbox",
+    "url": "https://demoqa.com/checkbox",
+    "expected_steps": 2
+  },
+  {
+    "name": "demoqa_radio",
+    "category": "selection",
+    "difficulty": "easy",
+    "task": "Select the 'Impressive' radio button",
+    "url": "https://demoqa.com/radio-button",
+    "expected_steps": 1
+  },
+  {
+    "name": "demoqa_buttons",
+    "category": "interaction",
+    "difficulty": "easy",
+    "task": "Click the 'Click Me' button",
+    "url": "https://demoqa.com/buttons",
+    "expected_steps": 1
+  },
+  {
+    "name": "saucedemo_login",
+    "category": "form",
+    "difficulty": "medium",
+    "task": "Log in with username 'standard_user' and password 'secret_sauce'",
+    "url": "https://www.saucedemo.com/",
+    "expected_steps": 3
+  },
+  {
+    "name": "saucedemo_add_to_cart",
+    "category": "multi_page",
+    "difficulty": "hard",
+    "task": "Log in with username 'standard_user' and password 'secret_sauce', then add the first item to the cart",
+    "url": "https://www.saucedemo.com/",
+    "expected_steps": 4
+  },
+  {
+    "name": "herokuapp_sortable_tables",
+    "category": "interaction",
+    "difficulty": "medium",
+    "task": "Click on the 'Last Name' column header to sort the table by last name",
+    "url": "https://the-internet.herokuapp.com/tables",
+    "expected_steps": 1
+  },
+  {
+    "name": "herokuapp_typos",
+    "category": "navigation",
+    "difficulty": "easy",
+    "task": "Read the page content — no action needed, just scroll down to see the full text",
+    "url": "https://the-internet.herokuapp.com/typos",
+    "expected_steps": 1
+  },
+  {
+    "name": "httpbin_form_different_data",
+    "category": "form",
+    "difficulty": "easy",
+    "task": "Fill out the form: customer name is 'Bob', size is Large, toppings are Bacon and Onion, and submit",
+    "url": "https://httpbin.org/forms/post",
+    "expected_steps": 6
+  },
+  {
+    "name": "books_five_star",
+    "category": "navigation",
+    "difficulty": "hard",
+    "task": "Find a book with a 5-star rating on this page and click on it",
+    "url": "https://books.toscrape.com/",
+    "expected_steps": 2
+  }
+]

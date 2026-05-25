@@ -101,6 +101,9 @@ async def execute(page: Page, scored: ScoredAction) -> ExecutionResult:
                 if await _checkbox_is_checked(page, action.center()):
                     result.success = True
                     result.signal = "checkbox_checked"
+                elif await _clicked_focusable(page, action.center()):
+                    result.success = True
+                    result.signal = "focus_change"
 
     except Exception as e:
         result.url_after = page.url
@@ -204,6 +207,48 @@ async def _checkbox_is_checked(page: Page, center: tuple[float, float]) -> bool:
                 }
 
                 return false;
+            }""",
+            [x, y],
+        )
+    except Exception:
+        return False
+
+
+async def _clicked_focusable(page: Page, center: tuple[float, float]) -> bool:
+    """Return True if a text-entry element at (x, y) is now the active element.
+
+    Only counts text inputs/textareas — not checkboxes, radios, or buttons,
+    which have their own success signals.
+    """
+    x, y = center
+    try:
+        return await page.evaluate(
+            """([x, y]) => {
+                let el = document.elementFromPoint(x, y);
+                if (!el) return false;
+
+                // Walk up from labels
+                const label = el.closest('label');
+                if (label) {
+                    const input = label.querySelector('input, textarea, select');
+                    if (input) el = input;
+                    else if (label.htmlFor) {
+                        const ref = document.getElementById(label.htmlFor);
+                        if (ref) el = ref;
+                    }
+                }
+
+                const target = el.closest('input, textarea, select, [contenteditable]');
+                if (!target) return false;
+
+                // Exclude checkboxes/radios — they have their own signal
+                const tag = target.tagName.toLowerCase();
+                if (tag === 'input') {
+                    const t = (target.type || '').toLowerCase();
+                    if (t === 'checkbox' || t === 'radio' || t === 'submit' || t === 'button') return false;
+                }
+
+                return document.activeElement === target;
             }""",
             [x, y],
         )
